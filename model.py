@@ -1,5 +1,4 @@
 import numpy as np
-import chainer
 import os; os.chdir('C:/Users/ingulbull/Desktop/2019-1/Repro_study_2019_1')
 import preprocess as prp
 import loader
@@ -11,28 +10,7 @@ import loader
     train_seq, val_seq, test_seq,
     word_vocab, char_vocab, max_len,
     function - make_vocab, word2char_idx, make_lookup'''
-# prp.train_char_idx
 
-## Sequence to each words and further each characters
-## Each seq ends with <eos> token.
-import torch
-def Seq2CharIdx(seq, char2idx):
-    split_seq = seq.split('<eos>')
-    idx_of_char_per_sentence = []
-    for sentence in split_seq:
-        words = sentence.split(' ')
-        idx_per_each_sentence = []
-        for word in words:
-            chars = list(word)
-            for char in chars:
-                idx_per_each_sentence.append(char2idx.get(char))
-        idx_of_char_per_sentence.append(idx_per_each_sentence)
-
-    return idx_of_char_per_sentence
-#####
-
-
-## Module
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -40,6 +18,7 @@ import torch.nn.functional as F
 src = {'char_vocab':prp.char_vocab,
        'word_vocab':prp.word_vocab,
        'maxLen':prp.max_len + 2,
+       'time_steps':35,
        'embed_size_char':15,
        'embed_size_word':300,
        'num_filter_per_width':25,
@@ -61,16 +40,15 @@ class Highway(nn.Module):
         carry_gate = 1 - trf_gate
         return torch.mul(trf_gate, F.relu(self.fc(y_k))) + torch.mul(carry_gate, y_k)
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(torch.cuda.is_available())
-
 class CharAwareLM(nn.Module):
     def __init__(self, src):
         super(CharAwareLM, self).__init__()
         self.char_vocab = src['char_vocab']
         self.word_vocab = src['word_vocab']
+        self.time_steps = src['time_steps']
         self.char_dim = src['embed_size_char']
         self.word_dim = src['embed_size_word']
+        self.hidden_size = src['hidden_size']
         ## embedding layer => Q.shape : (|C|, d)
         self.char_embed = nn.Embedding(len(src['char_vocab']), self.char_dim, padding_idx=0)
         ## num_filter_per_width = 25(multiplied by each filter width), widths = [1,2,3,4,5,6]
@@ -81,17 +59,18 @@ class CharAwareLM(nn.Module):
 
         ## CNN layers packed with nn.ModuleList
         self.sequential_cnn = []
-        self.maxpool = []
 
         for out_channel, filter_size in self.filter_width_list:
-            self.sequential_cnn.append(nn.Conv1d(
-                                       in_channels=self.char_dim,
-                                       out_channels=out_channel,
-                                       kernel_size=filter_size)
-                                       )
-            self.maxpool.append(nn.MaxPool1d(
-                                kernel_size=src['maxLen'] - filter_size + 1)
-                                )
+            self.sequential_cnn.append(nn.Sequential(
+                                           nn.Conv2d(
+                                           in_channels=self.time_steps,
+                                           out_channels=out_channel,
+                                           kernel_size=(filter_size, self.char_dim)),
+                                           nn.Tanh(),
+                                           nn.MaxPool2d(
+                                           kernel_size=(src['maxLen'] - filter_size + 1, 1)
+                                       )))
+
         self.sequential_cnn = nn.ModuleList(self.sequential_cnn)
 
         ## Highway layer
@@ -101,38 +80,36 @@ class CharAwareLM(nn.Module):
         # self.highway2 = Highway(self.y_k_size)
 
         ## LSTM layer
-        self.lstm = nn.LSTM(input_size=self.y_k_size, hidden_size=src['hidden_size'],
+        self.lstm = nn.LSTM(input_size=self.y_k_size, hidden_size=self.hidden_size,
                             num_layers=src['num_layer'], batch_first=True, dropout=0.5)
 
         ## Output softmax layer
         self.output = nn.Sequential(
                             nn.Dropout(0.5),
-                            nn.Linear(self.y_k_size, len(src['word_vocab'])),
+                            nn.Linear(self.hidden_size, len(src['word_vocab'])),
                             nn.Softmax(dim=-1))
 
-    def forward(self, data_char_idx, h0):
-        ''' data_char_idx : (batch) x (max_len+2 = maxLen)
+    def forward(self, data_char_idx):
+        ''' data_char_idx : (batch) x (time_steps) x (max_len+2 = maxLen) x (char_dim)
             h0 : '''
-        x = self.char_embed(data_char_idx) ## (batch) x (maxLen) x (char_embedding_size)
-        x.permute(0, 2, 1) ## (batch) x (char_embedding_size) x (maxLen)
+        x = self.char_embed(data_char_idx) ## (batch) x (time_steps) x (maxLen) x (char_embedding_size)
 
-        y_k = [ith_cnn(x) for ith_cnn in self.sequential_cnn] ## (batch) x (num_filter) x (maxLen-width+1)
-        for i in range(len(self.maxpool)):
-            y_k[i] = self.maxpool[i](y_k[i]) ## (batch) x (num_filter) x 1
-        y_k = torch.cat(y_k, 1) ## (batch) x (y_k_size) x 1
-        y_k = y_k.permute(0, 2, 1) ## (batch) x 1 x (y_k_size)
+        y_k = [ith_cnn(x) for ith_cnn in self.sequential_cnn] ## (batch) x (num_filter) x 1 x 1
+        y_k = torch.cat(y_k, 1) ## (batch) x (num_filter) x 1 x 1
+        y_k = y_k.squeeze(3) ## (batch) x (num_filter) x 1
+        y_k = y_k.permute(0, 2, 1) ## (batch) x 1 x (num_filter)
 
         z = self.highway(y_k)
 
-        out, h_c = self.lstm(z, h0)
-        out = self.output(out)
+        out, h = self.lstm(z) ## out : (batch) x 1 x (hidden_size)
+                              ## h : (h_n, c_n) -> (num_layer) x (batch) x (hidden_size)
+        out = self.output(out) ## (batch) x 1 x (word_vocab_size)
 
-        return out
+        return out, h
 
-model = CharAwareLM(src)
-train2 = prp.word2char_idx(prp.train_list, prp.char_vocab, prp.max_len)
-train2.shape
-h0 = torch.randn(64, )
-model(train2, )
-
-train2
+# for (data_char_idx, target) in loader.train_loader:
+#     print(data_char_idx.shape)
+#     out, (h, c) = model(data_char_idx)
+#     print(max(out[0]))
+#     # print(target)
+#     break
