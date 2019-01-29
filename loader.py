@@ -25,8 +25,3 @@ train_loader = data.DataLoader(dataset=dataset,
                                batch_size=batch,
                                shuffle=False,
                                drop_last=False)
-
-for (data_idx, target) in enumerate(train_loader):
-    print(data_idx)
-    break
-prp.train_char_idx.shape
