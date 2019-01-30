@@ -2,6 +2,7 @@ import numpy as np
 import os; os.chdir('C:/Users/ingulbull/Desktop/2019-1/Repro_study_2019_1')
 import preprocess as prp
 import loader
+from config import src
 
 ''' In the prp module :
     train, val, test,
@@ -14,19 +15,6 @@ import loader
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-src = {'char_vocab':prp.char_vocab,
-       'word_vocab':prp.word_vocab,
-       'maxLen':prp.max_len + 2,
-       'time_steps':35,
-       'embed_size_char':15,
-       'embed_size_word':300,
-       'num_filter_per_width':25,
-       'widths':[1,2,3,4,5,6],
-       'hidden_size':300,
-       'num_layer':2
-       }
-
 
 
 class Highway(nn.Module):
@@ -56,6 +44,8 @@ class CharAwareLM(nn.Module):
         self.num_filter = src['num_filter_per_width']
         self.filter_width_list = list(zip([self.num_filter * src['widths'][i] for i in range(len(src['widths']))],
                                            src['widths']))
+        self.num_layer = src['num_layer']
+        self.batch_size = src['batch_size']
 
         ## CNN layers packed with nn.ModuleList
         self.sequential_cnn = []
@@ -63,7 +53,7 @@ class CharAwareLM(nn.Module):
         for out_channel, filter_size in self.filter_width_list:
             self.sequential_cnn.append(nn.Sequential(
                                            nn.Conv2d(
-                                           in_channels=self.time_steps,
+                                           in_channels=1,
                                            out_channels=out_channel,
                                            kernel_size=(filter_size, self.char_dim)),
                                            nn.Tanh(),
@@ -89,23 +79,36 @@ class CharAwareLM(nn.Module):
                             nn.Linear(self.hidden_size, len(src['word_vocab'])),
                             nn.Softmax(dim=-1))
 
-    def forward(self, data_char_idx):
-        ''' data_char_idx : (batch) x (time_steps) x (max_len+2 = maxLen) x (char_dim)
+    def init_uniform(self):
+        for ith_cnn in self.sequential_cnn:
+            ith_cnn[0].weight.data.uniform_(-0.05, 0.05)
+        # self.lstm.weights_hh_l0.data.uniform_(-0.05, 0.05)
+        # self.lstm.weights_hh_l1.data.uniform_(-0.05, 0.05)
+        # self.lstm.weights_ih_l0.data.uniform_(-0.05, 0.05)
+        # self.lstm.weights_ih_l1.data.uniform_(-0.05, 0.05)
+        self.output[1].weight.data.uniform_(-0.05, 0.05)
+
+    def forward(self, data_char_idx, h0_with_c0):
+        ''' data_char_idx : (batch) x (time_steps) x (max_len+2 = maxLen)
             h0 : '''
         x = self.char_embed(data_char_idx) ## (batch) x (time_steps) x (maxLen) x (char_embedding_size)
+        x = x.view(-1, 1, x.shape[2], x.shape[3]) ## (batch * time_steps) x 1 x (maxLen) x (char_embedding_size)
 
-        y_k = [ith_cnn(x) for ith_cnn in self.sequential_cnn] ## (batch) x (num_filter) x 1 x 1
-        y_k = torch.cat(y_k, 1) ## (batch) x (num_filter) x 1 x 1
-        y_k = y_k.squeeze(3) ## (batch) x (num_filter) x 1
-        y_k = y_k.permute(0, 2, 1) ## (batch) x 1 x (num_filter)
+        y_k = [ith_cnn(x) for ith_cnn in self.sequential_cnn] ## (batch * time_steps) x (num_filter) x 1 x 1
+        y_k = torch.cat(y_k, 1) ## (batch * time_steps) x (y_k_size) x 1 x 1
+        y_k = y_k.squeeze(3) ## (batch * time_steps) x (y_k_size) x 1
+        y_k = y_k.permute(0, 2, 1) ## (batch * time_steps) x 1 x (y_k_size)
 
         z = self.highway(y_k)
+        z = z.view(self.batch_size, self.time_steps, -1)
 
-        out, h = self.lstm(z) ## out : (batch) x 1 x (hidden_size)
-                              ## h : (h_n, c_n) -> (num_layer) x (batch) x (hidden_size)
-        out = self.output(out) ## (batch) x 1 x (word_vocab_size)
+        out, h_with_c = self.lstm(z, h0_with_c0) ## out : (batch) x (time_steps) x (hidden_size)
+                              ## h_with_c : (h_n, c_n) -> (num_layer) x (batch) x (hidden_size)
+        out = self.output(out) ## (batch) x (time_steps) x (word_vocab_size)
+        out = out.view(self.batch_size * self.time_steps, 1, -1)
+        out = out.squeeze(1) ## (batch * time_steps) x (word_vocab_size)
 
-        return out, h
+        return out, h_with_c
 
 # for (data_char_idx, target) in loader.train_loader:
 #     print(data_char_idx.shape)
