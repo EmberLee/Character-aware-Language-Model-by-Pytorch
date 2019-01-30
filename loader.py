@@ -19,9 +19,22 @@ class OwnDataset(data.Dataset):
     def __len__(self):
         return len(self.data_char_idx)
 
-dataset = OwnDataset(prp.train_char_idx, prp.train)
 batch = 20
-train_loader = data.DataLoader(dataset=dataset,
+
+trainset = OwnDataset(prp.train_char_idx, prp.target_train)
+train_loader = data.DataLoader(dataset=trainset,
+                               batch_size=batch,
+                               shuffle=False,
+                               drop_last=False)
+
+valset = OwnDataset(prp.val_char_idx, prp.target_val)
+val_loader = data.DataLoader(dataset=valset,
+                               batch_size=batch,
+                               shuffle=False,
+                               drop_last=False)
+
+testset = OwnDataset(prp.test_char_idx, prp.target_test)
+test_loader = data.DataLoader(dataset=testset,
                                batch_size=batch,
                                shuffle=False,
                                drop_last=False)
