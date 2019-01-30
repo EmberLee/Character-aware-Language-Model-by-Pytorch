@@ -3,6 +3,7 @@ import chainer
 import torch
 import torch.nn as nn
 import os
+import copy as cp
 
 os.chdir('C:/Users/ingulbull/Desktop/2019-1/Repro_study_2019_1')
 train, val, test = chainer.datasets.get_ptb_words()
@@ -41,9 +42,9 @@ def make_vocab(seqs, char_vocab, max_len, append_token = False):
                     char_count += 1
 
             if append_token == True:
-                char_vocab['<pad>'] = 0
-                char_vocab['<bow>'] = char_count
-                char_vocab['<eow>'] = char_count + 1
+                char_vocab['+'] = 0
+                char_vocab['{'] = char_count
+                char_vocab['}'] = char_count + 1
 
             if max_len < len(word):
                 max_len = len(word)
@@ -62,7 +63,7 @@ def word2char_idx(words, char_vocab, max_len, time_steps = 35):
     result = []
     for i, word in enumerate(words):
         char_per_word = [char_vocab[char] for char in word]
-        char_per_word = [char_vocab['<bow>']] + char_per_word + [char_vocab['<eow>']]
+        char_per_word = [char_vocab['{']] + char_per_word + [char_vocab['}']]
 
         for k in range(0, max_len + 2 - len(char_per_word)):
             """Zero padding to compare with (max word length+2) because of bos and eos tokens"""
@@ -78,6 +79,19 @@ def word2char_idx(words, char_vocab, max_len, time_steps = 35):
 
     return torch.LongTensor(result)
 
+def stepify(data, time_steps = 35):
+    result = cp.deepcopy(list(data))
+    rmd = len(data) % time_steps
+    if rmd != 0:
+        for i in range(0, time_steps - rmd):
+            result.append(0)
+
+    result = np.array(result).reshape(-1, time_steps)
+    return torch.LongTensor(result)
+
 train_char_idx = word2char_idx(train_list, char_vocab, max_len) ## 26560 x (time_steps) x (maxLen)
-# val_char_idx = word2char_idx(val_list, char_vocab, max_len2)
-# test_char_idx = word2char_idx(test_list, char_vocab, max_len3)
+target_train = stepify(train)
+val_char_idx = word2char_idx(val_list, char_vocab, max_len2)
+target_val = stepify(val)
+test_char_idx = word2char_idx(test_list, char_vocab, max_len3)
+target_test = stepify(test)
