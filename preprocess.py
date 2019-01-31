@@ -2,10 +2,9 @@ import numpy as np
 import chainer
 import torch
 import torch.nn as nn
-import os
+# import os; os.chdir('C:/Users/ingulbull/Desktop/2019-1/Repro_study_2019_1')
 import copy as cp
 
-os.chdir('C:/Users/ingulbull/Desktop/2019-1/Repro_study_2019_1')
 train, val, test = chainer.datasets.get_ptb_words()
 # print('train shape: ', train.shape, train)
 # print('val   shape: ', val.shape, val)
