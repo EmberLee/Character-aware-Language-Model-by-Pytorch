@@ -1,4 +1,4 @@
-import os; os.chdir('C:/Users/ingulbull/Desktop/2019-1/Repro_study_2019_1')
+# import os; os.chdir('C:/Users/ingulbull/Desktop/2019-1/Repro_study_2019_1')
 import preprocess as prp
 
 src = {'char_vocab':prp.char_vocab,
