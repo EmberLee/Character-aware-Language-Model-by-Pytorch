@@ -1,5 +1,5 @@
 import numpy as np
-import os; os.chdir('C:/Users/ingulbull/Desktop/2019-1/Repro_study_2019_1')
+# import os; os.chdir('C:/Users/ingulbull/Desktop/2019-1/Repro_study_2019_1')
 import preprocess as prp
 import loader
 from config import src
@@ -77,15 +77,15 @@ class CharAwareLM(nn.Module):
         self.output = nn.Sequential(
                             nn.Dropout(0.5),
                             nn.Linear(self.hidden_size, len(src['word_vocab'])),
-                            nn.Softmax(dim=-1))
+                            )
 
-    def init_uniform(self):
+    def init_weight(self):
         for ith_cnn in self.sequential_cnn:
             ith_cnn[0].weight.data.uniform_(-0.05, 0.05)
-        # self.lstm.weights_hh_l0.data.uniform_(-0.05, 0.05)
-        # self.lstm.weights_hh_l1.data.uniform_(-0.05, 0.05)
-        # self.lstm.weights_ih_l0.data.uniform_(-0.05, 0.05)
-        # self.lstm.weights_ih_l1.data.uniform_(-0.05, 0.05)
+        self.lstm.weights_hh_l0.data.uniform_(-0.05, 0.05)
+        self.lstm.weights_hh_l1.data.uniform_(-0.05, 0.05)
+        self.lstm.weights_ih_l0.data.uniform_(-0.05, 0.05)
+        self.lstm.weights_ih_l1.data.uniform_(-0.05, 0.05)
         self.output[1].weight.data.uniform_(-0.05, 0.05)
 
     def forward(self, data_char_idx, h0_with_c0):
@@ -105,8 +105,8 @@ class CharAwareLM(nn.Module):
         out, h_with_c = self.lstm(z, h0_with_c0) ## out : (batch) x (time_steps) x (hidden_size)
                               ## h_with_c : (h_n, c_n) -> (num_layer) x (batch) x (hidden_size)
         out = self.output(out) ## (batch) x (time_steps) x (word_vocab_size)
-        out = out.view(self.batch_size * self.time_steps, 1, -1)
-        out = out.squeeze(1) ## (batch * time_steps) x (word_vocab_size)
+        out = out.contiguous().view(self.batch_size * self.time_steps, -1)
+        # out = out.squeeze(1) ## (batch * time_steps) x (word_vocab_size)
 
         return out, h_with_c
 
