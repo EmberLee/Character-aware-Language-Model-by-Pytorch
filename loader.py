@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.utils import data
-import os; os.chdir('C:/Users/ingulbull/Desktop/2019-1/Repro_study_2019_1')
+# import os; os.chdir('C:/Users/ingulbull/Desktop/2019-1/Repro_study_2019_1')
 import preprocess as prp
 
 ''' Things to sum up :
@@ -25,16 +25,16 @@ trainset = OwnDataset(prp.train_char_idx, prp.target_train)
 train_loader = data.DataLoader(dataset=trainset,
                                batch_size=batch,
                                shuffle=False,
-                               drop_last=False)
+                               drop_last=True)
 
 valset = OwnDataset(prp.val_char_idx, prp.target_val)
 val_loader = data.DataLoader(dataset=valset,
                                batch_size=batch,
                                shuffle=False,
-                               drop_last=False)
+                               drop_last=True)
 
 testset = OwnDataset(prp.test_char_idx, prp.target_test)
 test_loader = data.DataLoader(dataset=testset,
                                batch_size=batch,
                                shuffle=False,
-                               drop_last=False)
+                               drop_last=True)
