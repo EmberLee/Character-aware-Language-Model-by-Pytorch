@@ -14,7 +14,10 @@ class OwnDataset(data.Dataset):
         self.target = torch.LongTensor(target)
 
     def __getitem__(self, index):
-        return torch.tensor(self.data_char_idx[index]), torch.tensor(self.target[index])
+        if index == self.target.shape[0] - 1:
+            return torch.tensor(self.data_char_idx[index]), torch.tensor(self.target[0])
+        else:
+            return torch.tensor(self.data_char_idx[index]), torch.tensor(self.target[index + 1])
 
     def __len__(self):
         return len(self.data_char_idx)
@@ -24,17 +27,17 @@ batch = 20
 trainset = OwnDataset(prp.train_char_idx, prp.target_train)
 train_loader = data.DataLoader(dataset=trainset,
                                batch_size=batch,
-                               shuffle=False,
+                               shuffle=True,
                                drop_last=True)
 
 valset = OwnDataset(prp.val_char_idx, prp.target_val)
 val_loader = data.DataLoader(dataset=valset,
                                batch_size=batch,
-                               shuffle=False,
+                               shuffle=True,
                                drop_last=True)
 
 testset = OwnDataset(prp.test_char_idx, prp.target_test)
 test_loader = data.DataLoader(dataset=testset,
                                batch_size=batch,
-                               shuffle=False,
+                               shuffle=True,
                                drop_last=True)
