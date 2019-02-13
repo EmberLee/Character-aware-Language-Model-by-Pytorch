@@ -2,6 +2,7 @@ import numpy as np
 # import os; os.chdir('C:/Users/ingulbull/Desktop/2019-1/Repro_study_2019_1')
 import torch
 import torch.nn as nn
+from preprocess import *
 from loader import train_loader, val_loader
 from model import Highway, CharAwareLM
 from config import src
@@ -12,7 +13,7 @@ learning_rate = 1.0
 num_epochs = 25
 
 class Trainer():
-    def __init__(self, src, learning_rate, num_epochs, train_loader, val_loader):
+    def __init__(self, src, learning_rate, num_epochs, train_loader, val_loader, train_char_idx, target_train, val_char_idx, target_val):
         self.char_vocab = src['char_vocab']
         self.word_vocab = src['word_vocab']
         self.max_len = src['maxLen']
@@ -28,8 +29,12 @@ class Trainer():
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.train = train_char_idx
+        self.target_train = target_train
+        self.val = val_char_idx
+        self.target_val = target_val
 
-    def train(self):
+    def _train(self):
         best_ppl = 10000
         model = self.model
         device = self.device
@@ -38,19 +43,25 @@ class Trainer():
         print('Current Mode is', device)
 
         criterion = nn.CrossEntropyLoss()
+        # optimizer = torch.optim.SGD(filter(
+        #                             lambda p: p.requires_grad, model.parameters()),
+        #                             lr = self.lr
+        #                             )
         optimizer = torch.optim.SGD(filter(
                                     lambda p: p.requires_grad, model.parameters()),
                                     lr = self.lr
                                     )
 
-        h_with_c = [torch.zeros(self.num_layer, self.batch_size, self.hidden_size).to(device)] * 2
-
         for epoch in range(self.num_epochs):
+            h_with_c = [torch.zeros(self.num_layer, self.batch_size, self.hidden_size).to(device)] * 2
             model.train(True)
 
-            for i, (data_char, target) in enumerate(self.train_loader):
-                data_char = data_char.to(device)
-                target = target.to(device)
+            for i in range(0, self.train.shape[0] - self.batch_size, self.batch_size):
+            # for i, (data_char, target) in enumerate(self.train_loader):
+            #     data_char = data_char.to(device)
+            #     target = target.to(device)
+                data_char = self.train[i : i + self.batch_size, :, :].to(device)
+                target = self.target_train[(i+1) : (i+1) + self.batch_size, :].to(device)
 
                 h_with_c = [state.detach() for state in h_with_c]
                 out, h_with_c = model(data_char, h_with_c)
@@ -69,7 +80,7 @@ class Trainer():
                          (epoch+1, self.num_epochs, step // self.time_steps, len(self.train_loader) // self.time_steps,
                           loss.item(), np.exp(loss.item())))
 
-            model.eval(True)
+            model.eval()
             val_loss = self._validate(model, h_with_c, criterion)
             val_ppl = np.exp(val_loss)
 
@@ -87,7 +98,7 @@ class Trainer():
             if val_ppl < best_ppl:
                 print('Current best Val Loss: ', val_loss)
                 best_ppl = val_ppl
-                torch.save(model.state_dict(), 'model.pkl')
+                torch.save(model.state_dict(), 'model' + str(val_ppl) + '.pkl')
 
 
     def _validate(self, model, hidden, criterion):
@@ -95,16 +106,19 @@ class Trainer():
 
         val_loss = 0
         step = 0
-        for i, (data_char, target) in enumerate(self.val_loader):
-            data_char = data_char.to(device)
-            target = target.to(device)
+        for i in range(0, val.shape[0] - self.batch_size, self.batch_size):
+        # for i, (data_char, target) in enumerate(self.val_loader):
+        #     data_char = data_char.to(device)
+        #     target = target.to(device)
+            data_char = self.val[i : i + self.batch_size, :, :].to(device)
+            target = self.target_val[(i+1) : (i+1) + self.batch_size, :].to(device)
 
             out_val, _ = model(data_char, hidden)
             loss = criterion(out_val, target.view(-1))
             val_loss += loss.item()
             step += 1
 
-            # model.zero_grad()
+            model.zero_grad()
 
         print('Val Loss: %.4f, Perplexity: %5.2f' % (val_loss / step, np.exp(val_loss / step)))
 
@@ -112,5 +126,5 @@ class Trainer():
     # def _validate(self, valid_loader):
     #
 
-trainer = Trainer(src, learning_rate, num_epochs, train_loader, val_loader)
-trainer.train()
+trainer = Trainer(src, learning_rate, num_epochs, train_loader, val_loader, train_char_idx, target_train, val_char_idx, target_val)
+trainer._train()
