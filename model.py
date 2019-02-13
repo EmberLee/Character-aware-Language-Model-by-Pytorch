@@ -106,13 +106,5 @@ class CharAwareLM(nn.Module):
                               ## h_with_c : (h_n, c_n) -> (num_layer) x (batch) x (hidden_size)
         out = self.output(out) ## (batch) x (time_steps) x (word_vocab_size)
         out = out.contiguous().view(self.batch_size * self.time_steps, -1)
-        # out = out.squeeze(1) ## (batch * time_steps) x (word_vocab_size)
 
         return out, h_with_c
-
-# for (data_char_idx, target) in loader.train_loader:
-#     print(data_char_idx.shape)
-#     out, (h, c) = model(data_char_idx)
-#     print(max(out[0]))
-#     # print(target)
-#     break
